@@ -11,7 +11,7 @@ let updateInterval;
 let gameHandle = null;
 let modBaseAddr = null;
 
-const CURRENT_VERSION = "0.0.4"; // 更新版本——打包前记得改这里
+const CURRENT_VERSION = "0.0.5"; // 更新版本——打包前记得改这里
 
 // 两个下载和检测源
 const UPDATE_SOURCES = [
