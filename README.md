@@ -20,3 +20,7 @@
 4. 点击文本框里的数字左右拖动也可以增减数值
 5. 左右拖动的数值由最上方的滑块调整
 6. 勾选置顶窗口以此程序窗口悬浮在游戏窗口上
+
+
+若你在Gitee看到这条说明，请到Github下载<br>
+https://github.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/Latest
