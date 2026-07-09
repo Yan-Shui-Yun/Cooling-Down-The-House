@@ -170,14 +170,23 @@
 
 <button id="helpBtn">使用说明</button>
 
-<button id="updateNoticeBtn" style="display: none; background: #ff9800; color: white; width: auto; font-size: 14px; padding: 4px 10px; border-color: #e65100; margin-left: 10px; cursor: pointer;">
-    发现新版本！
-</button>
-
 <label>
     <input type="checkbox" id="topMost">
     置顶窗口
 </label>
+
+<button id="updateNoticeBtn" style="
+    display: none;
+    background: #cfe1f1;
+    color: #d9534f;
+    width: auto;
+    font-size: 14px;
+    padding: 4px 10px;
+    border-color: #344568;
+    margin-left: 10px;
+    cursor: pointer;">
+    发现新版本！
+</button>
 
 <script>
     const statusText = document.getElementById("statusText");
@@ -365,7 +374,7 @@
             // 显示按钮
             updateBtn.style.display = 'inline-block';
 
-            // 鼠标悬浮在按钮上时，展示更新日志和新版本号
+            // 展示更新日志和新版本号
             updateBtn.title = `最新版: ${data.version}\n更新内容:\n${data.log}`;
 
             // 点击按钮，打开下载页面

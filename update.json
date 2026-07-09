@@ -1,5 +1,8 @@
 {
   "latestVersion": "0.0.5",
-  "downloadUrl": "https://github.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/v0.0.4",
-  "updateLog": "1. 增加了复制/粘贴坐标的功能 \n2. 捏了捏拉拉肥"
+  "downloadUrl": [
+    "https://gitee.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/Latest",
+    "https://github.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/Latest"
+  ],
+  "updateLog": "1. 增加了检测更新功能 \n2. 捏了捏拉拉肥"
 }

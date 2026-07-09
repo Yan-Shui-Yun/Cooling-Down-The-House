@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const memoryjs = require('memoryjs');
 const fs = require('fs');
@@ -11,12 +11,12 @@ let updateInterval;
 let gameHandle = null;
 let modBaseAddr = null;
 
-const CURRENT_VERSION = "0.0.4"; // 打包前记得改这里
+const CURRENT_VERSION = "0.0.4"; // 更新版本——打包前记得改这里
 
 // 两个下载和检测源
 const UPDATE_SOURCES = [
     // 渠道1：Gitee
-    "https://gitee.com/Yan-Shui-Yun/Cooling-Down-The-House/raw/master/update.json",
+    "https://gitee.com/Yan-Shui-Yun/Cooling-Down-The-House/raw/main/update.json",
 
     // 渠道2：GitHub
     "https://raw.githubusercontent.com/Yan-Shui-Yun/Cooling-Down-The-House/master/update.json"
@@ -26,12 +26,12 @@ const UPDATE_SOURCES = [
 async function checkUpdateWithFallback() {
     for (const url of UPDATE_SOURCES) {
         try {
-            console.log(`正在请求更新信息: ${url}`);
-            //5秒超时
+            console.log(`正在尝试请求更新: ${url}`);
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), 5000);
 
-            const response = await fetch(url, { signal: controller.signal });
+            const cacheBusterUrl = `${url}?t=${Date.now()}`;
+            const response = await fetch(cacheBusterUrl, { signal: controller.signal });
             clearTimeout(id);
 
             if (!response.ok) continue;
@@ -39,18 +39,24 @@ async function checkUpdateWithFallback() {
             const data = await response.json();
             console.log("成功获取新版本数据:", data);
 
-            // 比对版本号
             if (data.latestVersion !== CURRENT_VERSION) {
-                // 如果发现新版本，发给前端 index.html
+                let finalDownloadUrl = "";
+
+                if (Array.isArray(data.downloadUrl)) {
+                    finalDownloadUrl = data.downloadUrl[0] || "https://github.com/Yan-Shui-Yun/Cooling-Down-The-House/releases";
+                } else {
+                    finalDownloadUrl = data.downloadUrl;
+                }
+
                 if (win && !win.isDestroyed()) {
                     win.webContents.send('update-available', {
                         version: data.latestVersion,
-                        url: data.downloadUrl,
+                        url: finalDownloadUrl, // 把筛选出来的单个最稳网址发给前端
                         log: data.updateLog
                     });
                 }
             }
-            return; // 只要有一个源成功拿到了数据，就直接退出函数，不再请求后面的源
+            return;
 
         } catch (err) {
             console.warn(`源 ${url} 请求失败，正在切换下一个...`, err.message);
