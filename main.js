@@ -13,16 +13,16 @@ let modBaseAddr = null;
 
 const CURRENT_VERSION = "0.0.4"; // 打包前记得改这里
 
-// 准备好两个下载和检测源（替换成你真实的用户名和仓库名）
+// 两个下载和检测源
 const UPDATE_SOURCES = [
-    // 渠道 1：码云 Gitee 的原始文本直链（国内访问极速且稳定）
-    "https://gitee.com/你的Gitee用户名/你的仓库名/raw/master/update.json",
+    // 渠道1：Gitee
 
-    // 渠道 2：GitHub 官方的直链（留作备用，翻墙用户或海外用户可用）
-    "https://raw.githubusercontent.com/你的GitHub用户名/你的仓库名/master/update.json"
+
+    // 渠道2：GitHub
+    "https://raw.githubusercontent.com/Yan-Shui-Yun/Cooling-Down-The-House/master/update.json"
 ];
 
-// 核心：双通道轮询检测函数
+//
 async function checkUpdateWithFallback() {
     for (const url of UPDATE_SOURCES) {
         try {
@@ -34,14 +34,14 @@ async function checkUpdateWithFallback() {
             const response = await fetch(url, { signal: controller.signal });
             clearTimeout(id);
 
-            if (!response.ok) continue; // 如果状态码不对，直接尝试下一个源
+            if (!response.ok) continue;
 
             const data = await response.json();
             console.log("成功获取新版本数据:", data);
 
             // 比对版本号
             if (data.latestVersion !== CURRENT_VERSION) {
-                // 如果发现新版本，通过 IPC 通信把下载链接和更新日志发给前端 index.html
+                // 如果发现新版本，发给前端 index.html
                 if (win && !win.isDestroyed()) {
                     win.webContents.send('update-available', {
                         version: data.latestVersion,
