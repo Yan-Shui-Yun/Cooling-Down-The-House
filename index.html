@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Cooling Down the House</title>
+
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+
+        body {
+            font-family: "Segoe UI";
+            margin: 0px 15px;
+            user-select: none;
+            position: relative;
+            z-index: 0;
+        }
+
+        /* 背景图片配置 */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: url('../assets/background.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            opacity: 0.03;
+            z-index: -1;
+        }
+
+        .status {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 12px;
+            color: #d9534f;
+            text-align: center;
+        }
+
+        .status.active {
+            color: #4CAF50;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+        }
+
+        .row label {
+            width: 70px;
+            font-size: 18px;
+        }
+
+        .control {
+            display: flex;
+            align-items: center;
+        }
+
+        button {
+            width: 34px;
+            height: 34px;
+            font-size: 20px;
+            border: 1px solid #bbb;
+            border-radius: 6px;
+            background: #f7f7f7;
+            cursor: pointer;
+            transition: .15s;
+        }
+
+        button:hover {
+            background: #e9e9e9;
+        }
+
+        button:active {
+            background: #dcdcdc;
+        }
+
+        .value {
+            width: 110px;
+            margin: 0 8px;
+            text-align: center;
+            font-size: 18px;
+            padding: 6px;
+        }
+
+        .dragging {
+            background: #d9ecff;
+        }
+
+        .drag-step-control {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 5px 0 12px 0;
+            padding: 5px 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+        }
+
+        .drag-step-control label {
+            font-size: 14px;
+            font-weight: 400;
+        }
+
+        .drag-step-control input[type="range"] {
+            width: 124px;
+            cursor: pointer;
+        }
+
+        /* 修改了数字输入框的样式 */
+        .drag-step-control .step-value {
+            font-size: 14px;
+            font-weight: bold;
+            width: 50px;
+            color: #2196F3;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 2px 4px;
+            text-align: center;
+            background: #ffffff;
+        }
+
+        #helpBtn {
+            white-space: nowrap;
+            padding: 4px 8px;
+            font-size: 12px;
+            margin-top: 0;
+            width: auto;
+            display: inline-block;
+            cursor: pointer;
+        }
+
+        .bottom-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+        }
+    </style>
+
+</head>
+
+<body>
+
+<div id="statusText" class="status">
+    未选中家具
+</div>
+
+<div class="drag-step-control">
+    <label for="dragStepSlider">拖拽移动量</label>
+    <input type="range" id="dragStepSlider" min="0.001" max="1" step="0.001" value="0.001">
+    <input type="number" class="step-value" id="dragStepDisplay" min="0.001" step="0.001" value="0.001">
+</div>
+
+<div id="panel"></div>
+
+<div class="drag-step-control" style="margin-top: 10px; justify-content: center;">
+    <button id="copyBtn" style="width: auto; padding: 0 15px; margin-right: 15px; font-size: 16px;">复制坐标</button>
+    <button id="pasteBtn" style="width: auto; padding: 0 15px; font-size: 16px;">粘贴坐标</button>
+</div>
+
+<button id="helpBtn">使用说明</button>
+
+<button id="updateNoticeBtn" style="display: none; background: #ff9800; color: white; width: auto; font-size: 14px; padding: 4px 10px; border-color: #e65100; margin-left: 10px; cursor: pointer;">
+    发现新版本！
+</button>
+
+<label>
+    <input type="checkbox" id="topMost">
+    置顶窗口
+</label>
+
+<script>
+    const statusText = document.getElementById("statusText");
+
+    const config = [
+        { id: "x", text: "X(横)", step: 0.001 },
+        { id: "y", text: "Y(高)", step: 0.001 },
+        { id: "z", text: "Z(纵)", step: 0.001 },
+        { id: "r", text: "角度", step: 1 }
+    ];
+
+    const panel = document.getElementById("panel");
+    const inputs = {};
+
+
+    let dragStepValue = 0.001; // 默认为0.001
+
+
+    const slider = document.getElementById("dragStepSlider");
+    const stepDisplay = document.getElementById("dragStepDisplay");
+
+    // 当滑动滑块时，更新输入框的值
+    slider.addEventListener("input", function () {
+        dragStepValue = parseFloat(this.value);
+        stepDisplay.value = dragStepValue.toFixed(3);
+    });
+
+    // 当手动在输入框打字时，反过来更新滑块和移动量数值
+    stepDisplay.addEventListener("input", function () {
+        let val = parseFloat(this.value);
+        if (isNaN(val) || val <= 0) val = 0.001; // 防止输入负数或空值导致出错
+        dragStepValue = val;
+        slider.value = val; // 滑块也会跟着动
+    });
+
+
+    config.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "row";
+
+        row.innerHTML = `
+            <label>${item.text}</label>
+            <div class="control">
+                <button class="minus">－</button>
+                <input class="value" id="${item.id}" type="number" step="${item.step}" value="0">
+                <button class="plus">＋</button>
+            </div>
+        `;
+
+        panel.appendChild(row);
+
+        const input = row.querySelector("input");
+        inputs[item.id] = input;
+
+        bindButtons(row, input);
+        bindDrag(input);
+
+        input.addEventListener("input", sendUpdate);
+    });
+
+
+    function bindButtons(row, input) {
+        let timeoutId = null;
+        let intervalId = null;
+
+        function step(dir) {
+            dir > 0 ? input.stepUp() : input.stepDown();
+            sendUpdate();
+        }
+
+        function start(dir) {
+            stop();
+
+            step(dir);
+
+            timeoutId = setTimeout(() => {
+                timeoutId = null;
+                intervalId = setInterval(() => step(dir), 30);
+            }, 500);
+        }
+
+        function stop() {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+        }
+
+        const plus = row.querySelector(".plus");
+        const minus = row.querySelector(".minus");
+
+        plus.addEventListener("mousedown", () => start(1));
+        minus.addEventListener("mousedown", () => start(-1));
+
+        const stopHandler = () => stop();
+        plus.addEventListener("mouseup", stopHandler);
+        minus.addEventListener("mouseup", stopHandler);
+        plus.addEventListener("mouseleave", stopHandler);
+        minus.addEventListener("mouseleave", stopHandler);
+
+        document.addEventListener("mouseup", stopHandler);
+    }
+
+
+    function bindDrag(input) {
+        let dragging = false;
+        let lastX = 0;
+
+        input.addEventListener("mousedown", e => {
+            dragging = true;
+            lastX = e.clientX;
+            input.classList.add("dragging");
+        });
+
+        document.addEventListener("mousemove", e => {
+            if (!dragging) return;
+
+            const dx = e.clientX - lastX;
+
+            // 阈值 5 像素（灵敏度）
+            if (dx >= 5 || dx <= -5) {
+                // 失去焦点
+                if (document.activeElement === input) {
+                    input.blur();
+                }
+
+                const currentVal = parseFloat(input.value) || 0;
+                if (dx >= 5) {
+                    input.value = currentVal + dragStepValue;
+                    lastX = e.clientX;
+                } else if (dx <= -5) {
+                    input.value = currentVal - dragStepValue;
+                    lastX = e.clientX;
+                }
+                sendUpdate();
+            }
+        });
+
+        document.addEventListener("mouseup", () => {
+            if (dragging) {
+                dragging = false;
+                input.classList.remove("dragging");
+            }
+        });
+    }
+
+    window.api.onReceiveCoords(data => {
+        const statusText = document.getElementById("statusText");
+
+        if (data.selected) {
+            statusText.textContent = data.name ? `已选中: ${data.name}` : "已选中家具";
+            statusText.className = "status active";
+        } else {
+            statusText.textContent = "未选中家具";
+            statusText.className = "status";
+        }
+
+
+        if (document.activeElement !== inputs.x)
+            inputs.x.value = data.x.toFixed(3);
+        if (document.activeElement !== inputs.y)
+            inputs.y.value = data.y.toFixed(3);
+        if (document.activeElement !== inputs.z)
+            inputs.z.value = data.z.toFixed(3);
+        if (document.activeElement !== inputs.r)
+            inputs.r.value = data.r.toFixed(3);
+    });
+
+    function sendUpdate() {
+        window.api.sendCoords({
+            x: Number(inputs.x.value),
+            y: Number(inputs.y.value),
+            z: Number(inputs.z.value),
+            r: Number(inputs.r.value)
+        });
+    }
+
+    window.api.onUpdateAvailable((data) => {
+        const updateBtn = document.getElementById('updateNoticeBtn');
+        if (updateBtn) {
+            // 显示按钮
+            updateBtn.style.display = 'inline-block';
+
+            // 鼠标悬浮在按钮上时，展示更新日志和新版本号
+            updateBtn.title = `最新版: ${data.version}\n更新内容:\n${data.log}`;
+
+            // 点击按钮，打开下载页面
+            updateBtn.addEventListener('click', () => {
+                window.api.openUrl(data.url);
+            });
+        }
+    });
+
+    document.getElementById("helpBtn").addEventListener("click", () => {
+        if (window.api && window.api.openHelp) {
+            window.api.openHelp();
+            console.log('按钮被点击了')
+        } else {
+            console.error("api.openHelp 未定义");
+        }
+    });
+
+    document.getElementById('topMost').addEventListener('change', (e) => {
+    if (window.api && window.api.setAlwaysOnTop) {
+        window.api.setAlwaysOnTop(e.target.checked);
+        console.log('置顶状态：', e.target.checked);
+    } else {
+        console.error('api.setAlwaysOnTop 未定义');
+    }
+    });
+
+    let clipboardCoords = null;
+
+    document.getElementById("copyBtn").addEventListener("click", () => {
+
+        const currentX = Number(inputs.x.value);
+        const currentY = Number(inputs.y.value);
+        const currentZ = Number(inputs.z.value);
+        const currentR = Number(inputs.r.value);
+
+        if (currentX === 0 && currentY === 0 && currentZ === 0 && currentR === 0) {
+            alert("未选中家具！");
+            return;
+        }
+
+        clipboardCoords = {
+            x: Number(inputs.x.value),
+            y: Number(inputs.y.value),
+            z: Number(inputs.z.value),
+            r: Number(inputs.r.value)
+        };
+
+        const originalText = statusText.textContent;
+        const originalClass = statusText.className;
+        statusText.textContent = "坐标已复制！";
+        statusText.className = "status active";
+
+        setTimeout(() => {
+            statusText.textContent = originalText;
+            statusText.className = originalClass;
+        }, 3500);
+    });
+
+    document.getElementById("pasteBtn").addEventListener("click", () => {
+
+        if (!clipboardCoords) {
+            alert("请先复制一个家具的坐标！");
+            return;
+        }
+
+        inputs.x.value = clipboardCoords.x.toFixed(3);
+        inputs.y.value = clipboardCoords.y.toFixed(3);
+        inputs.z.value = clipboardCoords.z.toFixed(3);
+        inputs.r.value = clipboardCoords.r.toFixed(3);
+
+        sendUpdate();
+
+        const originalText = statusText.textContent;
+        const originalClass = statusText.className;
+
+        statusText.className = "status active";
+
+        setTimeout(() => {
+            statusText.textContent = originalText;
+            statusText.className = originalClass;
+        }, 3500);
+    });
+
+</script>
+
+</body>
+</html>

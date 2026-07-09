@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>使用说明</title>
+    <style>
+//背景图片
+body {
+    position: relative;
+    z-index: 0;
+    font-family: "Segoe UI";
+    user-select: none;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: url('../assets/background.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    opacity: 0.03;   //透明度
+    z-index: -1;
+}
+
+    </style>
+</head>
+
+
+
+<body>
+<h2>使用说明</h2>
+<ol>
+    <li>打开游戏</li>
+    <li>以<b>管理员模式</b>运行此程序</li>
+    <li>在<b>旋转模式</b>下选中家具/庭具</li>
+    <li>调整参数</li>
+    <li>左键空地或其他家具保存位置（右键为取消变更）</li>
+</ol>
+
+<h2>功能简介</h2>
+<ol>
+    <li>坐标读取与输入值更改</li>
+    <li>保存家具坐标并粘贴予其他家具</li>
+    <li>+-按钮短按数值增减0.001，长按持续增减</li>
+    <li>点击文本框里的数字左右拖动也可以增减数值</li>
+    <li>左右拖动的数值由最上方的滑块调整</li>
+    <li>勾选置顶窗口以此程序窗口悬浮在游戏窗口上</li>
+</ol>
+
+
+
+
+</body>
+</html>
