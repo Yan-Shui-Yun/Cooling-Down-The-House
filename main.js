@@ -16,7 +16,7 @@ const CURRENT_VERSION = "0.0.4"; // 打包前记得改这里
 // 两个下载和检测源
 const UPDATE_SOURCES = [
     // 渠道1：Gitee
-
+    "https://gitee.com/Yan-Shui-Yun/Cooling-Down-The-House/raw/master/update.json",
 
     // 渠道2：GitHub
     "https://raw.githubusercontent.com/Yan-Shui-Yun/Cooling-Down-The-House/master/update.json"
