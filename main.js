@@ -128,7 +128,7 @@ function readMemoryAndSync() {
 }
 
 //保存窗口位置
-const configPath = path.join(__dirname, 'config.json');
+const configPath = path.join(app.getPath('userData'), 'config.json');
 
 function createWindow () {
   // 1. 准备默认的窗口配置
