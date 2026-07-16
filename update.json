@@ -1,8 +1,8 @@
 {
-  "latestVersion": "0.0.5",
+  "latestVersion": "0.0.6",
   "downloadUrl": [
     "https://gitee.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/Latest",
     "https://github.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/Latest"
   ],
-  "updateLog": "1. 增加了检测更新功能，尝试推送更新中 \n2. 捏了捏拉拉肥"
+  "updateLog": "1. 增加了World/Local移动方式 \n2. 增加了批量移动方式 \n3. 增加了解除限制 \n 4.捏了捏拉拉肥的另一边脸"
 }

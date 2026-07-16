@@ -26,6 +26,7 @@ body::before {
     background-repeat: no-repeat;
     opacity: 0.03;   //透明度
     z-index: -1;
+    pointer-events: none;
 }
 
     </style>
@@ -34,6 +35,13 @@ body::before {
 
 
 <body>
+
+<h2>友情链接</h2>
+
+<a href="#" id="GithubDLLink">前往GitHub下载页面</a><br>
+<a href="#" id="giteeDLLink">前往gitee下载页面</a><br>
+<a href="#" id="NgaLink">前往Nga帖子</a>
+
 <h2>使用说明</h2>
 <ol>
     <li>打开游戏</li>
@@ -42,6 +50,19 @@ body::before {
     <li>调整参数</li>
     <li>左键空地或其他家具保存位置（右键为取消变更）</li>
 </ol>
+<h3>如何使用批量移动功能：</h3>
+原理是设立参考目标A与A'，读取后续家具移动前的坐标B、C、D…计算向量AB、AC、AD…并加到A'上得到B'、C、'D'…的坐标
+<br>不想看原理？跟着以下操作找几个家具实操几下！
+<ol>
+    <li>请先确认哪些家具需要批量移动</li>
+    <li>确定家具范围后选取一个家具为参考，点击❐后点击1</li>
+    <li>将该参考家具移动到你想要去的地方，点击2</li>
+    <li>左键点击你想批量移动的后续家具
+        <br>（支持点击家具列表里的家具移动，但点击前请先左键空地移动参考家具）</li>
+    <li>移动完全部你想移动的家具后<b>记得点击❐关闭批量移动模式</b></li>
+</ol>
+ps. 若是点击到了不想移动的家具请记住右键空地取消放置
+<br>将将！你已经学会了，快去试试吧！
 
 <h2>功能简介</h2>
 <ol>
@@ -51,17 +72,65 @@ body::before {
     <li>点击文本框里的数字左右拖动也可以增减数值</li>
     <li>左右拖动的数值由最上方的滑块调整</li>
     <li>勾选置顶窗口以此程序窗口悬浮在游戏窗口上</li>
+    <li>可以world和local两种模式进行移动</li>
+    <li>批量移动功能，在正式用在你的装修前请确保你已经学会使用</li>
 </ol>
 
 
 <h3>更新日志</h3>
+
+<h4>26/7/16-v0.0.6</h4>
+<ol>
+    <li>增加了World和Local移动模式</li>
+    <li>增加了批量移动家具模式</li>
+    <li>捏了捏拉拉肥的另一边脸</li>
+</ol>
+
 <h4>26/7/10-v0.0.5</h4>
 <ol>
 <li>增加了检测更新功能</li>
 <li>捏了捏拉拉肥的脸</li>
 </ol>
 
-
-
 </body>
+
+<div style="text-align: center; margin-top: 30px; font-size: 13px; color: #888; border-top: 1px solid #eee; padding-top: 10px;">
+    <span>© 2026 海纳</span> |
+    <a href="#" id="githubLink" style="color: #2196F3; text-decoration: none; cursor: pointer; transition: 0.2s;">
+        ⭐ 访问作者的 GitHub
+    </a>
+</div>
+
+<script>
+    const link1 = document.getElementById('GithubDLLink');
+    if (link1) {
+        link1.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.api && window.api.openUrl) {
+                window.api.openUrl('https://github.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/Latest');
+            }
+        });
+    }
+
+    const link2 = document.getElementById('giteeDLLink');
+    if (link2) {
+        link2.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.api && window.api.openUrl) {
+                window.api.openUrl('https://gitee.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/Latest');
+            }
+        });
+    }
+
+    const link3 = document.getElementById('NgaLink');
+    if (link3) {
+        link3.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.api && window.api.openUrl) {
+                window.api.openUrl('https://bbs.nga.cn/read.php?tid=47154377');
+            }
+        });
+    }
+</script>
+
 </html>

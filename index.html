@@ -73,7 +73,7 @@
             background: #f7f7f7;
             cursor: pointer;
             transition: .15s;
-        }
+        }//+-的样式
 
         button:hover {
             background: #e9e9e9;
@@ -89,7 +89,7 @@
             text-align: center;
             font-size: 18px;
             padding: 6px;
-        }
+        }//文本框的样式
 
         .dragging {
             background: #d9ecff;
@@ -145,6 +145,59 @@
             align-items: center;
             margin-top: 8px;
         }
+
+        /* 默认状态（未开启）：灰白色调 */
+        .toggle-btn {
+            background-color: #f5f5f5;
+            border: 1px solid #dcdcdc;
+            color: #666666;
+            padding: 6px 6px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            /* 让变色有一个 0.2 秒的丝滑过渡 */
+            transition: all 0.2s ease-in-out;
+        }
+
+/       * 鼠标悬浮在没开启的按钮上时，稍微变一点点颜色暗示可以点击 */
+        .toggle-btn:hover {
+            background-color: #e0e0e0;
+        }
+
+        /* 激活状态（已开启）：当你给它加上 active 类名时，变成绿色！ */
+        .toggle-btn.active {
+            background-color: #e8f5e9;
+            border-color: #81c784;
+            color: #2e7d32;
+        }
+
+        /* 激活状态下悬浮，颜色稍微加深一点 */
+        .toggle-btn.active:hover {
+            background-color: #c8e6c9;
+        }
+
+        .btn-record {
+            background-color: #f5f5f5;
+            color: #000000;
+            border: 1px solid #000000;
+            padding: 3px 3px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-record:hover {
+            background-color: #e0e0e0;
+        }
+
+        /* 绿色激活状态 */
+        .btn.active, .btn-record.active {
+            background-color: #c8e6c9 !important; /* 绿色 */
+            color: #ffffff !important;
+            border-color: #4caf50 !important;
+            box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+        }
     </style>
 
 </head>
@@ -164,15 +217,67 @@
 <div id="panel"></div>
 
 <div class="drag-step-control" style="margin-top: 10px; justify-content: center;">
-    <button id="copyBtn" style="width: auto; padding: 0 15px; margin-right: 15px; font-size: 16px;">复制坐标</button>
-    <button id="pasteBtn" style="width: auto; padding: 0 15px; font-size: 16px;">粘贴坐标</button>
+
+    <button
+        id="coordModeBtn"
+        class="toggle-btn"
+        style="white-space: nowrap;"
+        title="🌐World模式：以标准的xyz轴移动&#10;✥Local模式：以当前家具旋转面向的xyz轴移动" >
+        🌐
+    </button>
+
+    <button
+        id="batchMoveBtn"
+        class="toggle-btn"
+        style="white-space: nowrap"
+        title="批量移动：请确认你已明白该功能的使用流程后再使用" >
+        ❐
+    </button>
+
+    <button
+            id="copyBtn"
+            style="width: auto; padding: 0 16px; margin-right: 2px; font-size: 13px;">
+        复制坐标
+    </button>
+    <button id="pasteBtn"
+            style="width: auto; padding: 0 16px; font-size: 13px;">
+        粘贴坐标
+    </button>
 </div>
 
+<div class="batch-container" style="margin-top: 15px; display: flex; align-items: center; gap: 8px;">
+    <button
+            id="recordPreBtn"
+            class="btn btn-record"
+            style="display: none;"
+            title="点击设置参照家具的初始坐标">
+        1</button>
+    <button
+            id="recordPostBtn"
+            class="btn btn-record"
+            style="display: none;"
+            title="点击设置参照家具的目标坐标">
+        2</button>
+</div>
+
+<div id="batchStatusPanel" style="font-size: 12px; margin-top: 10px; color: #888; line-height: 1.6; display: none; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; margin-bottom: 12px">
+    <div>起点: <span id="preStatus" style="color: #888; font-family: monospace;">未记录</span></div>
+    <div>目标: <span id="postStatus" style="color: #888; font-family: monospace;">未记录</span></div>
+    <div id="batchReadyHint" style="color: #344568; margin-top: 5px; font-weight: bold; display: none;">准备完毕，点击新家具自动执行位移 </div>
+</div>
+
+
+<div class="bottom-actions" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px;">
 <button id="helpBtn">使用说明</button>
 
 <label>
     <input type="checkbox" id="topMost">
     置顶窗口
+</label>
+
+<label>
+    <input type="checkbox" id="hackSwitch">
+    解除限制
 </label>
 
 <button id="updateNoticeBtn" style="
@@ -187,8 +292,41 @@
     cursor: pointer;">
     发现新版本！
 </button>
+</div>
 
 <script>
+
+// 🌟 托底机制：如果在 IDEA 或普通浏览器里打开，就伪造一个假的 api
+if (!window.api) {
+    console.warn("当前未运行在 Electron 环境中，已自动启用 Mock 调试模式！");
+    window.api = {
+        sendCoords: (coords) => console.log("[Mock] 发送坐标:", coords),
+        onReceiveCoords: (callback) => {
+            // 模拟游戏每隔 2 秒发来一次测试坐标
+            setInterval(() => {
+                callback({ selected: true, name: "测试用：拉拉肥", x: 10.5, y: 5.2, z: -3.8, r: 180 });
+            }, 2000);
+        },
+        openHelp: () => alert("[Mock] 打开帮助说明"),
+        setAlwaysOnTop: (val) => console.log("[Mock] 设置置顶:", val),
+        openUrl: (url) => window.open(url),
+        //模拟发现新版本！这样在 IDEA 预览里直接就能看到更新按钮并调它的样式
+        onUpdateAvailable: (callback) => {
+            setTimeout(() => {
+                callback({ version: "9.9.9", url: "https://github.com", log: "测试更新：\n1. 修复了头发掉光的BUG\n2. 优化了UI" });
+            }, 500);
+        },
+        toggleBatchMode: (val) => console.log("[Mock] 切换批量模式:", val),
+        recordAnchorPre: () => console.log("[Mock] 记录起点"),
+        recordAnchorPost: () => console.log("[Mock] 记录终点"),
+        onAnchorUpdated: (callback) => callback({ pre: {x:1, y:1, z:1, r:0}, post: {x:2, y:2, z:2, r:90} }),
+        setCoordinateMode: (isLocal) => console.log("[Mock] 切换坐标系:", isLocal),
+        nudge: (axis, amount) => console.log(`[Mock] 微调 ${axis} 偏移 ${amount}`),
+        resizeWindow: (w, h) => console.log(`[Mock] 调整窗口大小: ${w}x${h}`),
+        sendHackToggle: (enable) => console.log("[Mock] 切换解除限制:", enable)
+    };
+}
+
     const statusText = document.getElementById("statusText");
 
     const config = [
@@ -251,17 +389,21 @@
     function bindButtons(row, input) {
         let timeoutId = null;
         let intervalId = null;
+        const axis = input.id;
 
         function step(dir) {
-            dir > 0 ? input.stepUp() : input.stepDown();
-            sendUpdate();
+            if (window.api && window.api.nudge) {
+                const stepValue = parseFloat(input.getAttribute("step")) || 0.001;
+                const amount = dir > 0 ? dragStepValue : -dragStepValue;
+                window.api.nudge(axis, amount);
+            } else {
+                dir > 0 ? input.stepUp() : input.stepDown();
+                sendUpdate();
+            }
         }
-
         function start(dir) {
             stop();
-
             step(dir);
-
             timeoutId = setTimeout(() => {
                 timeoutId = null;
                 intervalId = setInterval(() => step(dir), 30);
@@ -298,6 +440,7 @@
     function bindDrag(input) {
         let dragging = false;
         let lastX = 0;
+        const axis = input.id;
 
         input.addEventListener("mousedown", e => {
             dragging = true;
@@ -316,16 +459,26 @@
                 if (document.activeElement === input) {
                     input.blur();
                 }
-
-                const currentVal = parseFloat(input.value) || 0;
-                if (dx >= 5) {
-                    input.value = currentVal + dragStepValue;
-                    lastX = e.clientX;
-                } else if (dx <= -5) {
-                    input.value = currentVal - dragStepValue;
-                    lastX = e.clientX;
+                if (window.api && window.api.nudge) {
+                    // 新逻辑：触发后端 Local/World 微调
+                    if (dx >= 5) {
+                        window.api.nudge(axis, dragStepValue);
+                        lastX = e.clientX;
+                    } else if (dx <= -5) {
+                        window.api.nudge(axis, -dragStepValue);
+                        lastX = e.clientX;
+                    }
+                } else {
+                    const currentVal = parseFloat(input.value) || 0;
+                    if (dx >= 5) {
+                        input.value = currentVal + dragStepValue;
+                        lastX = e.clientX;
+                    } else if (dx <= -5) {
+                        input.value = currentVal - dragStepValue;
+                        lastX = e.clientX;
+                    }
+                    sendUpdate();
                 }
-                sendUpdate();
             }
         });
 
@@ -368,19 +521,25 @@
         });
     }
 
+    let currentBaseHeight = 460;
     window.api.onUpdateAvailable((data) => {
         const updateBtn = document.getElementById('updateNoticeBtn');
         if (updateBtn) {
             // 显示按钮
             updateBtn.style.display = 'inline-block';
-
             // 展示更新日志和新版本号
             updateBtn.title = `最新版: ${data.version}\n更新内容:\n${data.log}`;
-
-            // 点击按钮，打开下载页面
+            // 点击打开下载页面
             updateBtn.addEventListener('click', () => {
                 window.api.openUrl(data.url);
             });
+            setTimeout(() => {
+                currentBaseHeight = 510;
+                if (window.api && window.api.resizeWindow) {
+                    const targetHeight = isBatchModeUI ? currentBaseHeight + 90 : currentBaseHeight;
+                    window.api.resizeWindow(350, targetHeight);
+                }
+            }, 10);
         }
     });
 
@@ -457,6 +616,149 @@
             statusText.textContent = originalText;
             statusText.className = originalClass;
         }, 3500);
+    });
+
+    // 获取 DOM 元素
+const batchBtn = document.getElementById('batchMoveBtn');
+const recordPreBtn = document.getElementById('recordPreBtn');
+const recordPostBtn = document.getElementById('recordPostBtn');
+const batchStatusPanel = document.getElementById('batchStatusPanel');
+const preStatus = document.getElementById('preStatus');
+const postStatus = document.getElementById('postStatus');
+const batchReadyHint = document.getElementById('batchReadyHint');
+
+let isBatchModeUI = false;
+
+// 初始化/重置批量 UI 状态
+function resetBatchUI() {
+    recordPreBtn.style.display = 'none';
+    recordPreBtn.classList.remove('active');
+    recordPreBtn.innerText = '1';
+
+    recordPostBtn.style.display = 'none';
+    recordPostBtn.classList.remove('active');
+    recordPostBtn.innerText = '2';
+
+    batchStatusPanel.style.display = 'none';
+    batchReadyHint.style.display = 'none';
+
+    preStatus.textContent = '未记录';
+    preStatus.style.color = '#888';
+    postStatus.textContent = '未记录';
+    postStatus.style.color = '#888';
+}
+
+if (batchBtn) {
+    batchBtn.addEventListener('click', () => {
+        isBatchModeUI = !isBatchModeUI;
+
+        if (isBatchModeUI) {
+            batchBtn.classList.add('active');
+
+            recordPreBtn.style.display = 'inline-block';
+            batchStatusPanel.style.display = 'block';
+
+            setTimeout(() => {
+                const contentHeight = document.body.scrollHeight + 90;
+                if (window.api && window.api.resizeWindow) {
+                    window.api.resizeWindow(350, contentHeight);
+                }
+            }, 0);
+
+        } else {
+            batchBtn.classList.remove('active');
+            // 关闭时收起并重置所有按钮
+            resetBatchUI();
+
+            //把窗口缩回初始的 460 高度
+            if (window.api && window.api.resizeWindow) {
+                window.api.resizeWindow(350, currentBaseHeight);
+            }
+        }
+
+        // 通知主进程开关状态
+        if (window.api && window.api.toggleBatchMode) {
+            window.api.toggleBatchMode(isBatchModeUI);
+        }
+    });
+}
+
+// 点击“设置标杆：前”
+if (recordPreBtn) {
+    recordPreBtn.addEventListener('click', () => {
+        if (window.api && window.api.recordAnchorPre) {
+            window.api.recordAnchorPre();
+        }
+    });
+}
+
+// 点击“设置标杆：后”
+if (recordPostBtn) {
+    recordPostBtn.addEventListener('click', () => {
+        if (window.api && window.api.recordAnchorPost) {
+            window.api.recordAnchorPost();
+        }
+    });
+}
+
+// 订阅主进程的标杆坐标回传
+if (window.api && window.api.onAnchorUpdated) {
+    window.api.onAnchorUpdated((status) => {
+        if (status.pre) {
+            recordPreBtn.classList.add('active');
+            recordPreBtn.innerText = '✔';
+
+            preStatus.textContent = `X:${status.pre.x.toFixed(3)} Y:${status.pre.y.toFixed(3)} Z:${status.pre.z.toFixed(3)} R:${status.pre.r.toFixed(1)}°`;
+            preStatus.style.color = '#4CAF50';
+
+            recordPostBtn.style.display = 'inline-block';
+        } else {
+            preStatus.textContent = '未记录';
+            preStatus.style.color = '#888';
+        }
+
+        // 处理终点 (Post)
+        if (status.post) {
+            recordPostBtn.classList.add('active');
+            recordPostBtn.innerText = '✔';
+
+            postStatus.textContent = `X:${status.post.x.toFixed(3)} Y:${status.post.y.toFixed(3)} Z:${status.post.z.toFixed(3)} R:${status.post.r.toFixed(1)}°`;
+            postStatus.style.color = '#4CAF50';
+        } else {
+            postStatus.textContent = '未记录';
+            postStatus.style.color = '#888';
+        }
+
+        if (status.pre && status.post) {
+            batchReadyHint.style.display = 'block';
+        } else {
+            batchReadyHint.style.display = 'none';
+        }
+    });
+}
+
+const coordModeBtn = document.getElementById('coordModeBtn');
+// 默认状态 World (false 代表 World, true 代表 Local)
+let isLocalModeUI = false;
+
+if (coordModeBtn) {
+    coordModeBtn.addEventListener('click', () => {
+        isLocalModeUI = !isLocalModeUI;
+
+        if (isLocalModeUI) {
+            coordModeBtn.innerText = '✥';
+        } else {
+            coordModeBtn.innerText = '🌐';
+        }
+
+        if (window.api && window.api.setCoordinateMode) {
+            window.api.setCoordinateMode(isLocalModeUI);
+        }
+    });
+}
+
+    document.getElementById('hackSwitch').addEventListener('change', (e) => {
+        window.api.sendHackToggle(e.target.checked);
     });
 
 </script>
