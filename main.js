@@ -18,7 +18,7 @@ let anchorPost = null;
 let deltaAngle = 0;
 let anchorPrePtr = null;
 let anchorPostPtr = null;
-
+let lastFurniturePtr = null;
 let isLocalMode = false;
 
 let gameProcess = null;
@@ -91,6 +91,7 @@ function connectGame() {
 
 function readMemoryAndSync() {
     //if (!win || win.isDestroyed()) return;
+    if (isScanning) return;
     if (!connectGame()) return;
 
     try {
@@ -101,10 +102,8 @@ function readMemoryAndSync() {
         //版本更新可能要改的地方
         let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
         if (!ptr || ptr === 0n) throw new Error("没找到基址");
-
         ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x40n), memoryjs.INT64);
         if (!ptr || ptr === 0n) throw new Error("未选中家具");
-
         ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x18n), memoryjs.INT64);
         if (!ptr || ptr === 0n) throw new Error("未选中家具");
 
@@ -217,6 +216,167 @@ function rotateVector(x, z, theta) {
     };
 }
 
+app.whenReady().then(createWindow);
+
+app.on('window-all-closed', () => {
+  clearInterval(updateInterval);
+  if (gameHandle) {
+      memoryjs.closeProcess(gameHandle);
+      gameHandle = null;
+  }
+  if (process.platform !== 'darwin') app.quit();
+});
+
+
+function writeToMemory(data) {
+    let tempProcess = null;
+    console.log("新数据:", data);
+    try {
+        //const processObject = memoryjs.openProcess(processName);
+        tempProcess = memoryjs.openProcess(processName);
+        const handle = tempProcess.handle;
+        const modBaseAddr = tempProcess.modBaseAddr;//获取动态基址
+
+        let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
+        if (!ptr || ptr === 0 || ptr === 0n) {
+            memoryjs.closeProcess(handle);
+            return;
+        }
+        ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x40n), memoryjs.INT64);
+        if (!ptr || ptr === 0 || ptr === 0n) {
+            console.log("\n请先在旋转模式下选中家具");
+            memoryjs.closeProcess(handle);
+            return;
+        }
+        ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x18n), memoryjs.INT64);
+        if (!ptr || ptr === 0 || ptr === 0n) {
+            console.log("\n请先在旋转模式下选中家具");
+            memoryjs.closeProcess(handle);
+            return;
+        }
+
+
+
+        //源头动态地址-XYZ轴
+        const REAL_X_ADDRESS = Number(BigInt(ptr) + 0x50n);
+        const REAL_Y_ADDRESS = Number(BigInt(ptr) + 0x54n);
+        const REAL_Z_ADDRESS = Number(BigInt(ptr) + 0x58n);
+        // 旋转四元数地址
+        const REAL_RX_ADDRESS = Number(BigInt(ptr) + 0x60n); // 旋转X
+        const REAL_RY_ADDRESS = Number(BigInt(ptr) + 0x64n); // 旋转Y
+        const REAL_RZ_ADDRESS = Number(BigInt(ptr) + 0x68n); // 旋转Z
+        const REAL_RW_ADDRESS = Number(BigInt(ptr) + 0x6Cn); // 旋转W
+        //计算四元数
+        const targetAngleRad = data.r * (Math.PI / 180);
+        const new_quat_Y = Math.sin(targetAngleRad / 2);
+        const new_quat_W = Math.cos(targetAngleRad / 2);
+
+        //写入新坐标
+        memoryjs.writeMemory(handle, REAL_X_ADDRESS, data.x, memoryjs.FLOAT);
+        memoryjs.writeMemory(handle, REAL_Y_ADDRESS, data.y, memoryjs.FLOAT);
+        memoryjs.writeMemory(handle, REAL_Z_ADDRESS, data.z, memoryjs.FLOAT);
+        // 写入新四元数
+        memoryjs.writeMemory(handle, REAL_RX_ADDRESS, 0.0, memoryjs.FLOAT);
+        memoryjs.writeMemory(handle, REAL_RY_ADDRESS, new_quat_Y, memoryjs.FLOAT);
+        memoryjs.writeMemory(handle, REAL_RZ_ADDRESS, 0.0, memoryjs.FLOAT);
+        memoryjs.writeMemory(handle, REAL_RW_ADDRESS, new_quat_W, memoryjs.FLOAT);
+
+        memoryjs.closeProcess(handle);
+
+    } catch (error) {
+        console.error("写入失败:", error.message);
+    }finally {
+        if (tempProcess) {
+            try { memoryjs.closeProcess(tempProcess.handle); } catch(e) {}
+        }
+    }
+
+}
+
+// 专门用于在批量移动前，抓取当前游戏内真实的坐标和角度
+function readCurrentCoords() {
+    let tempProcess = null;
+    try {
+        //const processObject = memoryjs.openProcess(processName);
+        tempProcess = memoryjs.openProcess(processName);
+        const handle = tempProcess.handle;
+        const modBaseAddr = tempProcess.modBaseAddr;
+
+        let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
+        if (!ptr || ptr === 0n) return null;;
+        ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x40n), memoryjs.INT64);
+        if (!ptr || ptr === 0n) return null;;
+        ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x18n), memoryjs.INT64);
+        if (!ptr || ptr === 0n) return null;;
+
+        // 计算坐标和角度的内存地址
+        const REAL_X_ADDRESS = Number(BigInt(ptr) + 0x50n);
+        const REAL_Y_ADDRESS = Number(BigInt(ptr) + 0x54n);
+        const REAL_Z_ADDRESS = Number(BigInt(ptr) + 0x58n);
+
+        const REAL_RY_ADDRESS = Number(BigInt(ptr) + 0x64n); // 四元数 Y
+        const REAL_RW_ADDRESS = Number(BigInt(ptr) + 0x6Cn); // 四元数 W
+
+        // 1. 读取坐标
+        const currentX = memoryjs.readMemory(handle, REAL_X_ADDRESS, memoryjs.FLOAT);
+        const currentY = memoryjs.readMemory(handle, REAL_Y_ADDRESS, memoryjs.FLOAT);
+        const currentZ = memoryjs.readMemory(handle, REAL_Z_ADDRESS, memoryjs.FLOAT);
+
+        // 2. 读取四元数并反算出角度（度数）
+        const qY = memoryjs.readMemory(handle, REAL_RY_ADDRESS, memoryjs.FLOAT);
+        const qW = memoryjs.readMemory(handle, REAL_RW_ADDRESS, memoryjs.FLOAT);
+
+        let rad = 2 * Math.atan2(qY, qW);
+        let deg = rad * (180 / Math.PI);
+        if (deg < 0) deg += 360; // 规整到 0~360 度
+
+        memoryjs.closeProcess(handle);
+
+        return { x: currentX, y: currentY, z: currentZ, r: deg, ptr: ptr };
+    } catch (error) {
+        console.error("读取当前坐标失败:", error.message);
+        return null;
+    } finally {
+        if (tempProcess) {
+            try { memoryjs.closeProcess(tempProcess.handle); } catch(e) {}
+        }
+    }
+}
+
+ipcMain.on('write-memory', (event, data) => {
+        writeToMemory(data);
+});
+
+// 监听前端“录入起点”请求
+ipcMain.on('record-anchor-pre', (event) => {
+    const coords = readCurrentCoords();
+    if (coords) {
+        anchorPre = coords;
+        anchorPrePtr = coords.ptr;
+        console.log("已记录起始标杆:", anchorPre);
+        sendAnchorStatus(event.sender);
+    }
+});
+
+// 监听前端“录入终点”请求
+ipcMain.on('record-anchor-post', (event) => {
+    const coords = readCurrentCoords();
+    if (coords) {
+        anchorPost = coords;
+        anchorPostPtr = coords.ptr;
+        console.log("已记录目标标杆:", anchorPost);
+        sendAnchorStatus(event.sender);
+    }
+});
+
+// 统一把当前的标杆状态发给前端
+function sendAnchorStatus(webContents) {
+    webContents.send('anchor-updated', {
+        pre: anchorPre,
+        post: anchorPost
+    });
+}
+
 function handleFurnitureMove(currentMemPos) {
     // 两个标杆都已经设置完毕，否则不执行
     if (!anchorPre || !anchorPost) {
@@ -252,157 +412,10 @@ function handleFurnitureMove(currentMemPos) {
 
     // 写入内存
     writeToMemory(safePosToWrite);
-    console.log("检测到新家具，已自动执行批量位移：", safePosToWrite);
+    console.log("检测到新家具，已执行位移：", safePosToWrite);
+    console.log("safePosToWrite");
 }
 
-app.whenReady().then(createWindow);
-
-app.on('window-all-closed', () => {
-  clearInterval(updateInterval);
-  if (gameHandle) {
-      memoryjs.closeProcess(gameHandle);
-      gameHandle = null;
-  }
-  if (process.platform !== 'darwin') app.quit();
-});
-
-
-function writeToMemory(data) {
-    console.log("新数据:", data);
-    try {
-        const processObject = memoryjs.openProcess(processName);
-        const handle = processObject.handle;
-        const modBaseAddr = processObject.modBaseAddr;//获取动态基址
-
-        let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
-        if (!ptr || ptr === 0 || ptr === 0n) {
-            memoryjs.closeProcess(handle);
-        }
-        ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x40n), memoryjs.INT64);
-        if (!ptr || ptr === 0 || ptr === 0n) {
-            console.log("\n请先在旋转模式下选中家具");
-            memoryjs.closeProcess(handle);
-        }
-        ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x18n), memoryjs.INT64);
-        if (!ptr || ptr === 0 || ptr === 0n) {
-            console.log("\n请先在旋转模式下选中家具");
-            memoryjs.closeProcess(handle);
-        }
-
-
-
-        //源头动态地址-XYZ轴
-        const REAL_X_ADDRESS = Number(BigInt(ptr) + 0x50n);
-        const REAL_Y_ADDRESS = Number(BigInt(ptr) + 0x54n);
-        const REAL_Z_ADDRESS = Number(BigInt(ptr) + 0x58n);
-        // 旋转四元数地址
-        const REAL_RX_ADDRESS = Number(BigInt(ptr) + 0x60n); // 旋转X
-        const REAL_RY_ADDRESS = Number(BigInt(ptr) + 0x64n); // 旋转Y
-        const REAL_RZ_ADDRESS = Number(BigInt(ptr) + 0x68n); // 旋转Z
-        const REAL_RW_ADDRESS = Number(BigInt(ptr) + 0x6Cn); // 旋转W
-        //计算四元数
-        const targetAngleRad = data.r * (Math.PI / 180);
-        const new_quat_Y = Math.sin(targetAngleRad / 2);
-        const new_quat_W = Math.cos(targetAngleRad / 2);
-
-        //写入新坐标
-        memoryjs.writeMemory(handle, REAL_X_ADDRESS, data.x, memoryjs.FLOAT);
-        memoryjs.writeMemory(handle, REAL_Y_ADDRESS, data.y, memoryjs.FLOAT);
-        memoryjs.writeMemory(handle, REAL_Z_ADDRESS, data.z, memoryjs.FLOAT);
-        // 写入新四元数
-        memoryjs.writeMemory(handle, REAL_RX_ADDRESS, 0.0, memoryjs.FLOAT);
-        memoryjs.writeMemory(handle, REAL_RY_ADDRESS, new_quat_Y, memoryjs.FLOAT);
-        memoryjs.writeMemory(handle, REAL_RZ_ADDRESS, 0.0, memoryjs.FLOAT);
-        memoryjs.writeMemory(handle, REAL_RW_ADDRESS, new_quat_W, memoryjs.FLOAT);
-
-        memoryjs.closeProcess(handle);
-
-    } catch (error) {
-        console.error("写入失败:", error.message);
-    }
-
-}
-
-// 专门用于在批量移动前，抓取当前游戏内真实的坐标和角度
-function readCurrentCoords() {
-    try {
-        const processObject = memoryjs.openProcess(processName);
-        const handle = processObject.handle;
-        const modBaseAddr = processObject.modBaseAddr;
-
-        let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
-        if (!ptr || ptr === 0n) throw new Error("无效指针");
-        ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x40n), memoryjs.INT64);
-        if (!ptr || ptr === 0n) throw new Error("无效指针");
-        ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x18n), memoryjs.INT64);
-        if (!ptr || ptr === 0n) throw new Error("无效指针");
-
-        // 计算坐标和角度的内存地址
-        const REAL_X_ADDRESS = Number(BigInt(ptr) + 0x50n);
-        const REAL_Y_ADDRESS = Number(BigInt(ptr) + 0x54n);
-        const REAL_Z_ADDRESS = Number(BigInt(ptr) + 0x58n);
-
-        const REAL_RY_ADDRESS = Number(BigInt(ptr) + 0x64n); // 四元数 Y
-        const REAL_RW_ADDRESS = Number(BigInt(ptr) + 0x6Cn); // 四元数 W
-
-        // 1. 读取坐标
-        const currentX = memoryjs.readMemory(handle, REAL_X_ADDRESS, memoryjs.FLOAT);
-        const currentY = memoryjs.readMemory(handle, REAL_Y_ADDRESS, memoryjs.FLOAT);
-        const currentZ = memoryjs.readMemory(handle, REAL_Z_ADDRESS, memoryjs.FLOAT);
-
-        // 2. 读取四元数并反算出角度（度数）
-        const qY = memoryjs.readMemory(handle, REAL_RY_ADDRESS, memoryjs.FLOAT);
-        const qW = memoryjs.readMemory(handle, REAL_RW_ADDRESS, memoryjs.FLOAT);
-
-        let rad = 2 * Math.atan2(qY, qW);
-        let deg = rad * (180 / Math.PI);
-        if (deg < 0) deg += 360; // 规整到 0~360 度
-
-        memoryjs.closeProcess(handle);
-
-        return { x: currentX, y: currentY, z: currentZ, r: deg, ptr: ptr };
-    } catch (error) {
-        console.error("读取当前坐标失败:", error.message);
-        return null;
-    }
-}
-
-ipcMain.on('write-memory', (event, data) => {
-
-
-        writeToMemory(data);
-
-});
-
-// 监听前端“录入起点”请求
-ipcMain.on('record-anchor-pre', (event) => {
-    const coords = readCurrentCoords();
-    if (coords) {
-        anchorPre = coords;
-        anchorPrePtr = coords.ptr;
-        console.log("已记录起始标杆:", anchorPre);
-        sendAnchorStatus(event.sender);
-    }
-});
-
-// 监听前端“录入终点”请求
-ipcMain.on('record-anchor-post', (event) => {
-    const coords = readCurrentCoords();
-    if (coords) {
-        anchorPost = coords;
-        anchorPostPtr = coords.ptr;
-        console.log("已记录目标标杆:", anchorPost);
-        sendAnchorStatus(event.sender);
-    }
-});
-
-// 统一把当前的标杆状态发给前端
-function sendAnchorStatus(webContents) {
-    webContents.send('anchor-updated', {
-        pre: anchorPre,
-        post: anchorPost
-    });
-}
 
 // 关闭批量模式时，自动清空标杆数据
 ipcMain.on('toggle-batch-mode', (event, isEnabled) => {
@@ -418,12 +431,13 @@ ipcMain.on('toggle-batch-mode', (event, isEnabled) => {
 });
 
 function monitorFurnitureSelection() {
-    if (!isBatchMode) return;
-
+    let tempProcess = null;
+    //if (!isBatchMode) return;
     try {
-        const processObject = memoryjs.openProcess(processName);
-        const handle = processObject.handle;
-        const modBaseAddr = processObject.modBaseAddr;
+        //const processObject = memoryjs.openProcess(processName);
+        tempProcess = memoryjs.openProcess(processName);
+        const handle = tempProcess.handle;
+        const modBaseAddr = tempProcess.modBaseAddr;
 
         let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
         if (!ptr || ptr === 0n) return;
@@ -432,14 +446,13 @@ function monitorFurnitureSelection() {
         ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x18n), memoryjs.INT64);
         if (!ptr || ptr === 0n) return;
 
-        // 检测到你鼠标点选了别的家具
+        // 检测鼠标点选别的家具
         if (lastFurniturePtr !== null && lastFurniturePtr !== ptr) {
-
             //选中的是标杆本身取消加向量
             if (ptr === anchorPrePtr || ptr === anchorPostPtr) {
-                console.log("选中的是标杆家具，免疫位移");
+                console.log("选中标杆家具，免疫位移");
             }
-            // 如果不是标杆，且标杆已经录入完毕，则执行位移！
+            //如果不是标杆，且标杆已经录入完毕，执行位移
             else if (anchorPre && anchorPost) {
                 console.log("检测到新家具，准备位移");
                 const currentMemPos = readCurrentCoords();
@@ -448,11 +461,14 @@ function monitorFurnitureSelection() {
                 }
             }
         }
-
         lastFurniturePtr = ptr;
         memoryjs.closeProcess(handle);
     } catch (error) {
         // 忽略
+    }finally {
+        if (tempProcess) {
+            try { memoryjs.closeProcess(tempProcess.handle); } catch(e) {}
+        }
     }
 }
 
@@ -483,8 +499,7 @@ ipcMain.on('open-external-url', (event, url) => {
 
 ipcMain.on('toggle-batch-mode', (event, isEnabled) => {
     isBatchMode = isEnabled;
-    console.log("已切换为批量移动模式:", isBatchMode);
-
+    console.log("批量移动:", isBatchMode);
     //关闭模式清零数据
     if (!isBatchMode) {
         anchorPre = null;
@@ -503,6 +518,7 @@ ipcMain.on('set-coord-mode', (event, isLocal) => {
     console.log(`当前移动模式已切换为: ${isLocalMode ? 'Local' : 'World'}`);
 });
 
+//下面的是local和world模式下的数据接收
 ipcMain.on('nudge-furniture', (event, data) => {
     // 批量模式下禁止手动微调
     //if (isBatchMode) return;
@@ -541,14 +557,12 @@ ipcMain.on('nudge-furniture', (event, data) => {
             if (axis === 'z') deltaZ = amount;
         }
     }
-
     let safePosToWrite = {
         x: parseFloat((currentPos.x + deltaX).toFixed(5)),
         y: parseFloat((currentPos.y + deltaY).toFixed(5)),
         z: parseFloat((currentPos.z + deltaZ).toFixed(5)),
         r: parseFloat((currentPos.r + deltaR).toFixed(3))
     };
-
     // 写入内存！
     writeToMemory(safePosToWrite);
 });
@@ -568,8 +582,12 @@ ipcMain.on('resize-window', (event, { width, height }) => {
 let placeAnywhereAddr = null;
 let wallAnywhereAddr = null;
 let wallmountAnywhereAddr = null;
+let isScanning = false;
 
 ipcMain.on('toggle-hack', (event, isEnable) => {
+    if (isScanning) return;
+    isScanning = true;
+
     let tempProcess = null;
     try {
         tempProcess = memoryjs.openProcess(processName);
@@ -629,5 +647,6 @@ ipcMain.on('toggle-hack', (event, isEnable) => {
             try { memoryjs.closeProcess(tempProcess.handle); } catch(e) {}
         }
     }
+    isScanning = false;
 });
 
