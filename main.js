@@ -3,8 +3,35 @@ const path = require('path');
 const memoryjs = require('memoryjs');
 const fs = require('fs');
 
+const CURRENT_VERSION = "0.1.6"; // 更新版本——打包前记得改这里
+
 const processName = "ffxiv_dx11.exe";
 const BASE_OFFSET = 0x02A8C550;
+
+let dynamicLayoutWorldBase = null;
+
+function getLayoutWorldBase(handle) {
+    if (dynamicLayoutWorldBase) return dynamicLayoutWorldBase;
+    //从 BDTH 抄的特征码
+    const pattern = "48 8B D1 48 8B 0D ? ? ? ? 48 85 C9 74 0A";
+    const scanResult = memoryjs.findPattern(handle, processName, pattern, memoryjs.NORMAL, 0);
+    if (!scanResult || scanResult === -1) {
+        console.error("找不到特征码");
+        return null;
+    }
+
+    try {
+        const instructionAddr = scanResult + 3;
+        const offset = memoryjs.readMemory(handle, instructionAddr + 3, memoryjs.INT32);
+
+        dynamicLayoutWorldBase = instructionAddr + 7 + offset;
+        console.log(`动态 LayoutWorld 基址: 0x${dynamicLayoutWorldBase.toString(16)}`);
+        return dynamicLayoutWorldBase;
+    } catch (e) {
+        console.error("计算动态基址失败:", e.message);
+        return null;
+    }
+}
 //----------------------------------------动态内存地址，游戏更新失效先看这个--------------------------------------------
 
 let win;
@@ -22,8 +49,6 @@ let lastFurniturePtr = null;
 let isLocalMode = false;
 
 let gameProcess = null;
-
-const CURRENT_VERSION = "0.0.6"; // 更新版本——打包前记得改这里
 
 // 两个下载和检测源
 const UPDATE_SOURCES = [
@@ -49,7 +74,7 @@ async function checkUpdateWithFallback() {
             if (!response.ok) continue;
 
             const data = await response.json();
-            console.log("成功获取新版本数据:", data);
+            console.log("成功获取新版本:", data);
 
             if (data.latestVersion !== CURRENT_VERSION) {
                 let finalDownloadUrl = "";
@@ -97,10 +122,12 @@ function readMemoryAndSync() {
     try {
         //const processObject = memoryjs.openProcess(processName);
         const handle = gameProcess.handle;
-        const modBaseAddr = gameProcess.modBaseAddr;
+        //const modBaseAddr = gameProcess.modBaseAddr;
+        const layoutWorldAddr = getLayoutWorldBase(handle);
+        if (!layoutWorldAddr) return;
 
         //版本更新可能要改的地方
-        let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
+        let ptr = memoryjs.readMemory(handle, layoutWorldAddr, memoryjs.INT64);
         if (!ptr || ptr === 0n) throw new Error("没找到基址");
         ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x40n), memoryjs.INT64);
         if (!ptr || ptr === 0n) throw new Error("未选中家具");
@@ -235,9 +262,11 @@ function writeToMemory(data) {
         //const processObject = memoryjs.openProcess(processName);
         tempProcess = memoryjs.openProcess(processName);
         const handle = tempProcess.handle;
-        const modBaseAddr = tempProcess.modBaseAddr;//获取动态基址
+        //const modBaseAddr = tempProcess.modBaseAddr;//获取动态基址
+        const layoutWorldAddr = getLayoutWorldBase(handle);
+        if (!layoutWorldAddr) return;
 
-        let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
+        let ptr = memoryjs.readMemory(handle, layoutWorldAddr, memoryjs.INT64);
         if (!ptr || ptr === 0 || ptr === 0n) {
             memoryjs.closeProcess(handle);
             return;
@@ -300,9 +329,12 @@ function readCurrentCoords() {
         //const processObject = memoryjs.openProcess(processName);
         tempProcess = memoryjs.openProcess(processName);
         const handle = tempProcess.handle;
-        const modBaseAddr = tempProcess.modBaseAddr;
+        //const modBaseAddr = tempProcess.modBaseAddr;
 
-        let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
+        const layoutWorldAddr = getLayoutWorldBase(handle);
+        if (!layoutWorldAddr) return;
+
+        let ptr = memoryjs.readMemory(handle, layoutWorldAddr, memoryjs.INT64);
         if (!ptr || ptr === 0n) return null;;
         ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x40n), memoryjs.INT64);
         if (!ptr || ptr === 0n) return null;;
@@ -437,9 +469,12 @@ function monitorFurnitureSelection() {
         //const processObject = memoryjs.openProcess(processName);
         tempProcess = memoryjs.openProcess(processName);
         const handle = tempProcess.handle;
-        const modBaseAddr = tempProcess.modBaseAddr;
+        //const modBaseAddr = tempProcess.modBaseAddr;
 
-        let ptr = memoryjs.readMemory(handle, modBaseAddr + BASE_OFFSET, memoryjs.INT64);
+        const layoutWorldAddr = getLayoutWorldBase(handle);
+        if (!layoutWorldAddr) return;
+
+        let ptr = memoryjs.readMemory(handle, layoutWorldAddr, memoryjs.INT64);
         if (!ptr || ptr === 0n) return;
         ptr = memoryjs.readMemory(handle, Number(BigInt(ptr) + 0x40n), memoryjs.INT64);
         if (!ptr || ptr === 0n) return;
@@ -577,12 +612,17 @@ ipcMain.on('resize-window', (event, { width, height }) => {
     }
 });
 
-//解除限制
+//-------------------------------解除限制-------------------------------
 //-------------------------------版本更新可能要改-------------------------------
 let placeAnywhereAddr = null;
 let wallAnywhereAddr = null;
 let wallmountAnywhereAddr = null;
 let isScanning = false;
+
+let showcasePlaceAddr = null;
+let showcaseRotateAddr = null;
+let showcasePlaceOriginal = null;
+let showcaseRotateOriginal = null;
 
 ipcMain.on('toggle-hack', (event, isEnable) => {
     if (isScanning) return;
@@ -592,14 +632,16 @@ ipcMain.on('toggle-hack', (event, isEnable) => {
     try {
         tempProcess = memoryjs.openProcess(processName);
         const handle = tempProcess.handle;
+        const flags = memoryjs.NORMAL || 0;
+        const PAGE_EXECUTE_READWRITE = 0x40;
 
-        //扫描一次并缓存
-        if (!placeAnywhereAddr || !wallAnywhereAddr || !wallmountAnywhereAddr) {
-            console.log("正在扫描内存特征码，请稍候...");
+        console.log("--- 开始扫描特征码 ---");
 
-            const flags = memoryjs.NORMAL || 0;
-
-
+        // ==========================================
+        // 模块A：普通家具扫描与执行
+        // (注：如果你有最新的 BDTH pattern1,2,3，请替换下面的字符串)
+        // ==========================================
+        if (!placeAnywhereAddr) {
             const pattern1 = "C6 83 ? ? 00 00 00 0F 29 44 24";
             const res1 = memoryjs.findPattern(handle, processName, pattern1, flags, 0);
             if (res1 && res1 !== -1) placeAnywhereAddr = res1 + 6;
@@ -611,37 +653,54 @@ ipcMain.on('toggle-hack', (event, isEnable) => {
             const pattern3 = "C6 87 83 01 00 00 00 48 83 C4";
             const res3 = memoryjs.findPattern(handle, processName, pattern3, flags, 0);
             if (res3 && res3 !== -1) wallmountAnywhereAddr = res3 + 6;
-
-            console.log(`[特征码扫描完成] \n通用放置: ${placeAnywhereAddr}\n墙壁吸附: ${wallAnywhereAddr}\n壁挂限制: ${wallmountAnywhereAddr}`);
         }
 
-        if (!placeAnywhereAddr || !wallAnywhereAddr || !wallmountAnywhereAddr) {
-            console.log("特征码扫描失败");
-            //扫描失重置缓存
-            placeAnywhereAddr = null;
-            wallAnywhereAddr = null;
-            wallmountAnywhereAddr = null;
-            return;
-        }
-
-        const targetByte = isEnable ? 0x01 : 0x00;
-        const bufferToWrite = Buffer.from([targetByte]);
-        const PAGE_EXECUTE_READWRITE = 0x40;
-
-        const addresses = [placeAnywhereAddr, wallAnywhereAddr, wallmountAnywhereAddr];
-        addresses.forEach(addr => {
-            memoryjs.virtualProtectEx(handle, addr, 1, PAGE_EXECUTE_READWRITE);
-            memoryjs.writeBuffer(handle, addr, bufferToWrite);
-        });
-
-        if (isEnable) {
-            console.log("已解除摆放限制");
+        if (placeAnywhereAddr && wallAnywhereAddr && wallmountAnywhereAddr) {
+            const targetByte = isEnable ? 0x01 : 0x00;
+            const bufferToWrite = Buffer.from([targetByte]);
+            [placeAnywhereAddr, wallAnywhereAddr, wallmountAnywhereAddr].forEach(addr => {
+                memoryjs.virtualProtectEx(handle, addr, 1, PAGE_EXECUTE_READWRITE);
+                memoryjs.writeBuffer(handle, addr, bufferToWrite);
+            });
+            console.log("普通家具限制: 已" + (isEnable ? "解除" : "恢复"));
         } else {
-            console.log("已恢复摆放限制");
+            console.log("普通家具限制: 扫描失败，功能跳过");
+            placeAnywhereAddr = null; // 重置缓存以便下次重试
+        }
+
+        // ==========================================
+        // 模块B：展示柜扫描与执行
+        // ==========================================
+        if (!showcasePlaceAddr) {
+            const patternPlace = "C6 87 ? ? 00 00 00 48 8B BC 24 ? ? ? ? 48";
+            const resPlace = memoryjs.findPattern(handle, processName, patternPlace, flags, 0);
+            if (resPlace && resPlace !== -1) showcasePlaceAddr = resPlace;
+
+            const patternRotate = "88 87 ? ? 00 00 0F 28 74 24 ? 48 8B";
+            const resRotate = memoryjs.findPattern(handle, processName, patternRotate, flags, 0);
+            if (resRotate && resRotate !== -1) showcaseRotateAddr = resRotate;
+
+            if (showcasePlaceAddr) showcasePlaceOriginal = memoryjs.readBuffer(handle, showcasePlaceAddr, 7);
+            if (showcaseRotateAddr) showcaseRotateOriginal = memoryjs.readBuffer(handle, showcaseRotateAddr, 6);
+        }
+
+        if (showcasePlaceAddr && showcaseRotateAddr && showcasePlaceOriginal && showcaseRotateOriginal) {
+            const placeBuffer = isEnable ? Buffer.alloc(7, 0x90) : showcasePlaceOriginal;
+            memoryjs.virtualProtectEx(handle, showcasePlaceAddr, 7, PAGE_EXECUTE_READWRITE);
+            memoryjs.writeBuffer(handle, showcasePlaceAddr, placeBuffer);
+
+            const rotateBuffer = isEnable ? Buffer.alloc(6, 0x90) : showcaseRotateOriginal;
+            memoryjs.virtualProtectEx(handle, showcaseRotateAddr, 6, PAGE_EXECUTE_READWRITE);
+            memoryjs.writeBuffer(handle, showcaseRotateAddr, rotateBuffer);
+
+            console.log("展柜限制: 已" + (isEnable ? "解除" : "恢复"));
+        } else {
+            console.log("展柜限制: 扫描失败，功能跳过");
+            showcasePlaceAddr = null; // 重置缓存
         }
 
     } catch (error) {
-        console.error("特征码注入失败:", error.message);
+        console.error("注入过程发生严重错误:", error.message);
     } finally {
         if (tempProcess) {
             try { memoryjs.closeProcess(tempProcess.handle); } catch(e) {}
