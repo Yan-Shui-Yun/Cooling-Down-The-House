@@ -37,7 +37,7 @@
         }
 
         .status {
-            font-size: 24px;
+            font-size: 28px;
             font-weight: bold;
             margin-bottom: 12px;
             color: #d9534f;
@@ -73,7 +73,7 @@
             background: #f7f7f7;
             cursor: pointer;
             transition: .15s;
-        }//+-的样式
+        }/*+-的样式*/
 
         button:hover {
             background: #e9e9e9;
@@ -89,7 +89,7 @@
             text-align: center;
             font-size: 18px;
             padding: 6px;
-        }//文本框的样式
+        }/*文本框的样式*/
 
         .dragging {
             background: #d9ecff;
@@ -116,7 +116,7 @@
             cursor: pointer;
         }
 
-        /* 修改了数字输入框的样式 */
+        /* 数字输入框的样式 */
         .drag-step-control .step-value {
             font-size: 14px;
             font-weight: bold;
@@ -160,7 +160,7 @@
             transition: all 0.2s ease-in-out;
         }
 
-/       * 鼠标悬浮在没开启的按钮上时，稍微变一点点颜色暗示可以点击 */
+        /* 鼠标悬浮在没开启的按钮上时，稍微变一点点颜色暗示可以点击 */
         .toggle-btn:hover {
             background-color: #e0e0e0;
         }
@@ -198,6 +198,50 @@
             border-color: #4caf50 !important;
             box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
         }
+
+        /* 扩展菜单样式 */
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    bottom: 100%; /* 向上弹出 */
+    left: 0;
+    margin-bottom: 8px;
+    background-color: #ffffff;
+    min-width: 110px;
+    box-shadow: 0px 4px 10px rgba(0,0,0,0.15);
+    border-radius: 6px;
+    border: 1px solid #ddd;
+    z-index: 100;
+    overflow: hidden;
+}
+
+/* 控制菜单显示的类 */
+.dropdown-menu.show {
+    display: block;
+    animation: fadeIn 0.15s ease-out;
+}
+
+.dropdown-item {
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #333;
+    cursor: pointer;
+    transition: background 0.2s;
+    text-align: center;
+}
+
+.dropdown-item:hover {
+    background-color: #f0f0f0;
+}
+
+.dropdown-item:not(:last-child) {
+    border-bottom: 1px solid #eee;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
     </style>
 
 </head>
@@ -268,7 +312,14 @@
 
 
 <div class="bottom-actions" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px;">
-<button id="helpBtn">使用说明</button>
+<div class="bottom-actions" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px;">
+    <div style="position: relative; display: inline-block;">
+        <button id="settingsBtn" class="toggle-btn" style="width: auto; padding: 4px 8px; font-size: 16px;" title="设置">⚙️</button>
+        <div id="settingsDropdown" class="dropdown-menu">
+            <div class="dropdown-item" id="openHelpItem">打开使用说明</div>
+            <div class="dropdown-item" id="openLogItem">打开日志路径</div>
+        </div>
+    </div>
 
 <label>
     <input type="checkbox" id="topMost">
@@ -295,8 +346,6 @@
 </div>
 
 <script>
-
-// 🌟 托底机制：如果在 IDEA 或普通浏览器里打开，就伪造一个假的 api
 if (!window.api) {
     console.warn("当前未运行在 Electron 环境中，已自动启用 Mock 调试模式！");
     window.api = {
@@ -304,7 +353,7 @@ if (!window.api) {
         onReceiveCoords: (callback) => {
             // 模拟游戏每隔 2 秒发来一次测试坐标
             setInterval(() => {
-                callback({ selected: true, name: "测试用：拉拉肥", x: 10.5, y: 5.2, z: -3.8, r: 180 });
+                callback({ selected: true, name: "测试用拉拉肥", x: 10.5, y: 5.2, z: -3.8, r: 180 });
             }, 2000);
         },
         openHelp: () => alert("[Mock] 打开帮助说明"),
@@ -324,6 +373,7 @@ if (!window.api) {
         nudge: (axis, amount) => console.log(`[Mock] 微调 ${axis} 偏移 ${amount}`),
         resizeWindow: (w, h) => console.log(`[Mock] 调整窗口大小: ${w}x${h}`),
         sendHackToggle: (enable) => console.log("[Mock] 切换解除限制:", enable)
+        
     };
 }
 
@@ -543,12 +593,40 @@ if (!window.api) {
         }
     });
 
-    document.getElementById("helpBtn").addEventListener("click", () => {
+    // === 齿轮扩展菜单逻辑 ===
+    const settingsBtn = document.getElementById("settingsBtn");
+    const settingsDropdown = document.getElementById("settingsDropdown");
+
+// 点击齿轮切换菜单显示/隐藏
+    settingsBtn.addEventListener("click", (event) => {
+        event.stopPropagation(); // 阻止事件冒泡，防止触发 document 的点击事件将其立刻关闭
+        settingsDropdown.classList.toggle("show");
+    });
+
+// 点击页面空白处自动关闭菜单
+    document.addEventListener("click", (event) => {
+        if (!settingsDropdown.contains(event.target) && event.target !== settingsBtn) {
+            settingsDropdown.classList.remove("show");
+        }
+    });
+
+// 绑定“打开使用说明”点击事件
+    document.getElementById("openHelpItem").addEventListener("click", () => {
+        settingsDropdown.classList.remove("show");
         if (window.api && window.api.openHelp) {
             window.api.openHelp();
-            console.log('按钮被点击了')
         } else {
             console.error("api.openHelp 未定义");
+        }
+    });
+
+// 绑定“打开日志路径”点击事件
+    document.getElementById("openLogItem").addEventListener("click", () => {
+        settingsDropdown.classList.remove("show");
+        if (window.api && window.api.openLogFolder) {
+            window.api.openLogFolder();
+        } else {
+            console.error("api.openLogFolder 未定义");
         }
     });
 
@@ -760,6 +838,12 @@ if (coordModeBtn) {
     document.getElementById('hackSwitch').addEventListener('change', (e) => {
         window.api.sendHackToggle(e.target.checked);
     });
+
+if (window.api && window.api.onShowAlert) {
+    window.api.onShowAlert((message) => {
+        alert(message);
+    });
+}
 
 </script>
 

@@ -1,6 +1,6 @@
 {
   "name": "CoolingDownTheHouse",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "artifactName": "${productName}-v${version}-for7.55.${ext}",
   "main": "main.js",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "electron-builder"
   },
   "dependencies": {
+    "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "memoryjs": "^3.5.1"
   },

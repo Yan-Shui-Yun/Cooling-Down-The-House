@@ -1,8 +1,8 @@
 {
-  "latestVersion": "0.1.6",
+  "latestVersion": "0.1.7",
   "downloadUrl": [
     "https://gitee.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/Latest",
     "https://github.com/Yan-Shui-Yun/Cooling-Down-The-House/releases/tag/Latest"
   ],
-  "updateLog": "1. 现在对7.55适配了 \n2. 现在解除限制对展示柜有效了 \n3. 拉拉肥刷北岛中……"
+  "updateLog": "1. 增添了简易的日志输出功能 \n2. 拉拉肥还在刷北岛中……\n如果你是最新版还看到了这条消息可能是作者又忘记传gitee了请无视",
 }

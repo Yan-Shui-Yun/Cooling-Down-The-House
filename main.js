@@ -3,10 +3,11 @@ const path = require('path');
 const memoryjs = require('memoryjs');
 const fs = require('fs');
 
-const CURRENT_VERSION = "0.1.6"; // 更新版本——打包前记得改这里
+const CURRENT_VERSION = "0.1.7"; // 更新版本——打包前记得改这里
 
 const processName = "ffxiv_dx11.exe";
 const BASE_OFFSET = 0x02A8C550;
+const log = require('electron-log');
 
 let dynamicLayoutWorldBase = null;
 
@@ -28,7 +29,7 @@ function getLayoutWorldBase(handle) {
         console.log(`动态 LayoutWorld 基址: 0x${dynamicLayoutWorldBase.toString(16)}`);
         return dynamicLayoutWorldBase;
     } catch (e) {
-        console.error("计算动态基址失败:", e.message);
+        console.error("计算基址失败:", e.message);
         return null;
     }
 }
@@ -59,7 +60,17 @@ const UPDATE_SOURCES = [
     "https://raw.githubusercontent.com/Yan-Shui-Yun/Cooling-Down-The-House/master/update.json"
 ];
 
-//
+//错误日志
+log.transports.file.getFile().clear();
+log.transports.console.format = '[{y}-{m}-{d} {h}:{i}:{s}] [{level}] {text}';
+log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}] [{level}] {text}';
+log.info('=== 这是一份新日志（下次启动会清除）===');
+log.info('=== 反馈时请截图标注了异常的地方===');
+
+process.on('uncaughtException', (error) => {
+    log.error('检测到异常:', error);
+});
+
 async function checkUpdateWithFallback() {
     for (const url of UPDATE_SOURCES) {
         try {
@@ -96,24 +107,71 @@ async function checkUpdateWithFallback() {
             return;
 
         } catch (err) {
-            console.warn(`源 ${url} 请求失败，正在切换下一个...`, err.message);
+            console.warn(`源 ${url} 请求失败，正在请求下一个`, err.message);
         }
     }
     console.log("尝试更新失败。");
 }
 
+let lastConnectError = "";
+let lastConnectState = "";
 function connectGame() {
     if (gameProcess && gameProcess.handle) return true;
     try {
+        const allProcesses = memoryjs.getProcesses();
+        const ffxivProcesses = allProcesses.filter(
+            p => p.szExeFile.toLowerCase() === processName.toLowerCase()
+        );
+        const processCount = ffxivProcesses.length;
+        if (processCount > 1) {
+            // 发现多个进程
+            if (lastConnectState !== "multiple_processes") {
+                log.warn(`发现 ${processCount} 个 FF14 进程。可能导致不能选中家具。`);
+                
+                if (win && !win.isDestroyed()) {
+                    win.webContents.send('show-alert', 
+                        `发现了 ${processCount} 个FFXIV(DX11)的进程！\n\n这会导致读取失败。\n请尝试“重启”而非关机再启动电脑。`
+                    );
+                }
+                lastConnectState = "multiple_processes";
+            }
+            return false; 
+        } 
+        else if (processCount === 0) {
+            // 一个都没找到
+            if (lastConnectState !== "not_found") {
+                log.info(`———— 未找到游戏进程，等待游戏启动... ————`);
+                lastConnectState = "not_found";
+            }
+            return false;
+        }
+
         gameProcess = memoryjs.openProcess(processName);
-        console.log("成功连接游戏");
+        if (lastConnectState !== "success") {
+            log.info('———— 连接游戏成功 ————');
+            log.info(`[FF14] PID: ${gameProcess.th32ProcessID}`);
+            log.info(`[FF14] Handle: ${gameProcess.handle}`);
+            log.info('——————————————');
+            lastConnectState = "success"; // 成功后把状态更新为 success
+        }
         return true;
     } catch (e) {
         gameProcess = null;
+        const currentError = e?.message || "未知错误";
+        if (lastConnectState !== currentError) {
+            log.warn(`———— 连接游戏失败 ————`);
+            log.warn(`[FF14] 错误类型: ${e?.name}`);
+            log.warn(`[FF14] 错误信息: ${e?.message}`);
+            log.warn(`[FF14] 错误代码: ${e?.code}`);
+            log.warn(`[FF14] 完整错误: ${JSON.stringify(e)}`);
+            log.info('——————————————');
+            lastConnectState = currentError;
+        }
         return false;
     }
 }
 
+let lastSyncState = "init";
 function readMemoryAndSync() {
     //if (!win || win.isDestroyed()) return;
     if (isScanning) return;
@@ -153,7 +211,21 @@ function readMemoryAndSync() {
             r: currentAngleDeg
         });
 
+        if (lastSyncState !== "success") {
+            log.info("已选中家具，现坐标↓");
+            log.info(`X: ${two_X.toFixed(3)}, Y: ${two_Y.toFixed(3)}, Z: ${two_Z.toFixed(3)}, 角度: ${currentAngleDeg.toFixed(1)}`);
+            lastSyncState = "success";
+        }
+
     } catch (error) {
+        if (lastSyncState !== error.message) {
+            if (error.message === "未选中家具") {
+                log.warn(`未选中家具`);
+            } else {
+                log.error(`读取内存异常: ${error.message}（可能是开着工具把游戏关了）`);
+            }
+            lastSyncState = error.message; // 更新状态
+        }
         // 如果上面任何一步失败（游戏没开、没选中家具），就给前端发 0
         win.webContents.send('sync-memory', {
             selected: false,
@@ -177,6 +249,8 @@ function createWindow () {
     width: 350,
     height: 460,
     resizable: false, //固定窗口大小
+    autoHideMenuBar: true, //隐藏顶部菜单
+    //frame: false, //去除顶部栏
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true //不要动
@@ -598,7 +672,7 @@ ipcMain.on('nudge-furniture', (event, data) => {
         z: parseFloat((currentPos.z + deltaZ).toFixed(5)),
         r: parseFloat((currentPos.r + deltaR).toFixed(3))
     };
-    // 写入内存！
+    // 写入内存
     writeToMemory(safePosToWrite);
 });
 
@@ -637,10 +711,6 @@ ipcMain.on('toggle-hack', (event, isEnable) => {
 
         console.log("--- 开始扫描特征码 ---");
 
-        // ==========================================
-        // 模块A：普通家具扫描与执行
-        // (注：如果你有最新的 BDTH pattern1,2,3，请替换下面的字符串)
-        // ==========================================
         if (!placeAnywhereAddr) {
             const pattern1 = "C6 83 ? ? 00 00 00 0F 29 44 24";
             const res1 = memoryjs.findPattern(handle, processName, pattern1, flags, 0);
@@ -668,9 +738,6 @@ ipcMain.on('toggle-hack', (event, isEnable) => {
             placeAnywhereAddr = null; // 重置缓存以便下次重试
         }
 
-        // ==========================================
-        // 模块B：展示柜扫描与执行
-        // ==========================================
         if (!showcasePlaceAddr) {
             const patternPlace = "C6 87 ? ? 00 00 00 48 8B BC 24 ? ? ? ? 48";
             const resPlace = memoryjs.findPattern(handle, processName, patternPlace, flags, 0);
@@ -709,3 +776,15 @@ ipcMain.on('toggle-hack', (event, isEnable) => {
     isScanning = false;
 });
 
+ipcMain.on('open-log-folder', () => {
+    try {
+        const logPath = log.transports.file.getFile().path;
+        
+
+        shell.showItemInFolder(logPath);
+        
+        log.info('打开了日志文件夹');
+    } catch (error) {
+        log.error(`打开日志文件夹失败: ${error.message}`);
+    }
+});

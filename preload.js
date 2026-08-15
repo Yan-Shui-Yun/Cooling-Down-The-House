@@ -14,5 +14,7 @@ contextBridge.exposeInMainWorld('api', {
     setCoordinateMode: (isLocal) => ipcRenderer.send('set-coord-mode', isLocal),
     nudge: (axis, amount) => ipcRenderer.send('nudge-furniture', { axis, amount }),
     resizeWindow: (width, height) => ipcRenderer.send('resize-window', { width, height }),
-    sendHackToggle: (isEnable) => ipcRenderer.send('toggle-hack', isEnable)
+    sendHackToggle: (isEnable) => ipcRenderer.send('toggle-hack', isEnable),
+    openLogFolder: () => ipcRenderer.send('open-log-folder'),
+    onShowAlert: (callback) => ipcRenderer.on('show-alert', (event, msg) => callback(msg))
 });
